@@ -647,6 +647,12 @@ class PCMCCEnvironment:
                 com.increment_stagnation()
                 # Update metrics using current population
                 com.calculate_metrics(com.state.population, self.Gs)
+            
+            # TANGO: compute influence metrics for NR-CIQ queries
+            com.update_tango_metrics(self.Gs, self.P_score, self.N_prob, self.hop)
+
+        # ── TANGO: Compute pairwise propagation_overlap ──
+        self._update_propagation_overlaps()
 
         # 2. Update Global State
         # Correctly calculate global DPADV by combining seeds from all communities
@@ -803,6 +809,9 @@ class PCMCCEnvironment:
             danger_i = self._calculate_community_danger(com, delta_ref)
             com.state.danger_score = danger_i  # TANGO: persist on state
             
+            # TANGO: refresh influence metrics before observation
+            com.update_tango_metrics(self.Gs, self.P_score, self.N_prob, self.hop)
+            
             # Recalculate Gamma for observation
             gamma_i = gamma_merger.calculate_gamma(self.Gs, com.state.nodes)
 
@@ -826,6 +835,9 @@ class PCMCCEnvironment:
                 gamma=gamma_i
             ))
             
+        # TANGO: update propagation overlaps
+        self._update_propagation_overlaps()
+        
         return GlobalObservation(
             current_generation=self.current_gen,
             current_global_dpadv=self.global_best_dpadv,
@@ -962,6 +974,44 @@ class PCMCCEnvironment:
                      com.update_best_solution(action.candidate_seed_set, local_fitness)
                      com.reset_stagnation()
 
+    def _update_propagation_overlaps(self):
+        """
+        TANGO: Compute propagation_overlap for each community pair.
+        
+        propagation_overlap = Jaccard(reachable_set_A, reachable_set_B)
+        Stored on each community's state as a dict: {neighbor_id: overlap}
+        """
+        com_ids = list(self.communities.keys())
+        n = len(com_ids)
+        if n < 2:
+            return
+        
+        for i in range(n):
+            cid_a = com_ids[i]
+            com_a = self.communities[cid_a]
+            reach_a = getattr(com_a, '_reachable_set', set())
+            
+            overlaps = {}
+            for j in range(n):
+                if i == j:
+                    continue
+                cid_b = com_ids[j]
+                com_b = self.communities[cid_b]
+                reach_b = getattr(com_b, '_reachable_set', set())
+                
+                if reach_a and reach_b:
+                    intersection = len(reach_a & reach_b)
+                    union = len(reach_a | reach_b)
+                    overlaps[cid_b] = intersection / union if union > 0 else 0.0
+                else:
+                    overlaps[cid_b] = 0.0
+            
+            com_a.state.propagation_overlap = overlaps.get(
+                list(overlaps.keys())[0], 0.0
+            ) if overlaps else 0.0
+            # Also store full pairwise dict for detailed queries
+            com_a._propagation_overlap_map = overlaps
+    
     def check_termination(self, max_gen: int) -> bool:
         """
         Checks termination conditions based on PCMCC logic.

@@ -191,6 +191,58 @@ class Community:
                 boundary_nodes.add(u)
         
         self.state.boundary_nodes = list(boundary_nodes)
+    
+    def update_tango_metrics(self, G, P_score: dict, N_prob: dict, hop: int):
+        """
+        Compute TANGO influence metrics for NR-CIQ INFLUENCE_ESTIMATE queries.
+        
+        Metrics:
+        - expected_gain: max P_score among boundary nodes
+        - marginal_benefit: avg P_score per budget unit
+        - covered_frontier: boundary nodes within `hop` of current seed set
+        - _reachable_set: all nodes reachable from seed set (for env-level overlap)
+        """
+        budget = max(1, self.state.budget)
+        boundary = self.state.boundary_nodes
+        seeds = self.state.current_seed_set
+        
+        # expected_gain per boundary node
+        expected_gain_per_node = {}
+        for b in boundary:
+            expected_gain_per_node[b] = P_score.get(b, 0.0)
+        
+        # aggregate expected_gain (max among boundary)
+        gains = list(expected_gain_per_node.values())
+        self.state.expected_gain = max(gains) if gains else 0.0
+        
+        # marginal_benefit = avg P_score per budget unit
+        if gains and budget > 0:
+            self.state.marginal_benefit = sum(gains) / (len(gains) * budget)
+        else:
+            self.state.marginal_benefit = 0.0
+        
+        # covered_frontier: boundary nodes within `hop` of seed set
+        covered = []
+        reachable = set()
+        if seeds:
+            visited = set(seeds)
+            frontier = list(seeds)
+            for _ in range(hop):
+                next_frontier = []
+                for u in frontier:
+                    for v in G.neighbors(u):
+                        if v not in visited:
+                            visited.add(v)
+                            next_frontier.append(v)
+                frontier = next_frontier
+                if not frontier:
+                    break
+            reachable = visited
+            boundary_set = set(boundary)
+            covered = list(boundary_set & reachable)
+        
+        self.state.covered_frontier = covered
+        self._reachable_set = reachable
         
     def update_neighbors(self, neighbor_ids: List[int]):
         self.state.neighbor_community_ids = neighbor_ids

@@ -464,6 +464,9 @@ def _community_data_provider(community_id: int, query_type, env) -> Dict[str, An
             "best_dpadv": state.current_dpadv,
             "budget": state.budget,
             "boundary_node_count": len(getattr(state, 'boundary_nodes', [])),
+            "marginal_benefit": getattr(state, 'marginal_benefit', 0.0),
+            "expected_gain": getattr(state, 'expected_gain', 0.0),
+            "propagation_overlap": getattr(state, 'propagation_overlap', 0.0),
         }
     
     elif query_type == QT.BOUNDARY_NODES or str(query_type) == "boundary_nodes":
@@ -475,6 +478,8 @@ def _community_data_provider(community_id: int, query_type, env) -> Dict[str, An
             "boundary_scores": getattr(state, 'boundary_scores', {}),
             "covered_frontier": getattr(state, 'covered_frontier', []),
             "expected_gain": getattr(state, 'expected_gain', 0.0),
+            "marginal_benefit": getattr(state, 'marginal_benefit', 0.0),
+            "propagation_overlap": getattr(state, 'propagation_overlap', 0.0),
             "current_dpadv": state.current_dpadv,
             "danger_score": getattr(state, 'danger_score', 0.0),
             "budget": state.budget,
@@ -494,19 +499,25 @@ def _community_data_provider(community_id: int, query_type, env) -> Dict[str, An
             "boundary_risk": getattr(state, 'boundary_risk', 0.0),
             "improvement_rate": getattr(state, 'improvement_rate', 0.0),
             "marginal_benefit": getattr(state, 'marginal_benefit', 0.0),
+            "expected_gain": getattr(state, 'expected_gain', 0.0),
+            "covered_frontier_count": len(getattr(state, 'covered_frontier', [])),
             "danger_score": getattr(state, 'danger_score', 0.0),
         }
     
     elif query_type == QT.INFLUENCE_ESTIMATE or str(query_type) == "influence_estimate":
         # INFLUENCE_ESTIMATE: return data needed for marginal benefit comparison
+        # Include per-neighbor propagation overlap map for detailed analysis
+        prop_map = getattr(com, '_propagation_overlap_map', {})
         return {
             "expected_gain": getattr(state, 'expected_gain', 0.0),
             "covered_frontier": getattr(state, 'covered_frontier', []),
             "marginal_benefit": getattr(state, 'marginal_benefit', 0.0),
             "propagation_overlap": getattr(state, 'propagation_overlap', 0.0),
+            "propagation_overlap_map": {str(k): v for k, v in prop_map.items()},
             "current_dpadv": state.current_dpadv,
             "danger_score": getattr(state, 'danger_score', 0.0),
             "budget": state.budget,
+            "boundary_node_count": len(getattr(state, 'boundary_nodes', [])),
         }
     
     # Fallback: return basic state info

@@ -14,13 +14,23 @@ ALLOWED_FIELDS = {
     ],
     QueryType.BOUNDARY_NODES: [
         "boundary_nodes", "boundary_node_count", "neighbor_ids",
-        "boundary_scores"  # node_id -> centrality score at boundary
+        "boundary_scores",  # node_id -> centrality score at boundary
+        "covered_frontier",  # subset of boundary nodes already covered by this community
+        "expected_gain",     # estimated DPADV reduction if this boundary node is claimed
     ],
     QueryType.TOP_K_CANDIDATES: [
         "top_k_score_nodes", "current_seed_set", "solution_history"
     ],
     QueryType.BUDGET_PROPOSAL: [
-        "budget", "current_dpadv", "boundary_risk", "improvement_rate"
+        "budget", "current_dpadv", "boundary_risk", "improvement_rate",
+        "marginal_benefit",  # estimated DPADV reduction per additional budget unit
+    ],
+    # NEW: Influence-specific query
+    QueryType.INFLUENCE_ESTIMATE: [
+        "expected_gain",       # estimated DPADV reduction for claiming this node
+        "covered_frontier",    # boundary nodes this community already covers
+        "marginal_benefit",    # ΔDPADV / Δbudget at current allocation
+        "propagation_overlap",  # Jaccard of influence reachable sets
     ],
 }
 
@@ -32,7 +42,6 @@ class NRCIQProtocol:
     def create_query(sender_id: int, receiver_id: int, 
                      query_type: QueryType, fields: List[str]) -> NRCIQQuery:
         """Create a structured NR-CIQ query."""
-        # Validate fields against allowed set
         allowed = ALLOWED_FIELDS.get(query_type, [])
         valid_fields = [f for f in fields if f in allowed]
         
@@ -52,7 +61,6 @@ class NRCIQProtocol:
     def create_response(query: NRCIQQuery, sender_id: int,
                         data: Dict[str, Any], status: str = "ok") -> NRCIQResponse:
         """Create a structured response to a query."""
-        # Only include requested fields
         filtered_data = {k: v for k, v in data.items() if k in query.fields}
         
         return NRCIQResponse(

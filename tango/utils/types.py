@@ -14,6 +14,7 @@ class QueryType(Enum):
     BOUNDARY_NODES = "boundary_nodes"
     TOP_K_CANDIDATES = "top_k_candidates"
     BUDGET_PROPOSAL = "budget_proposal"
+    INFLUENCE_ESTIMATE = "influence_estimate"
 
 
 @dataclass
@@ -51,6 +52,10 @@ class NegotiationBid:
     budget_request: int  # Requested budget allocation
     justification: str  # LLM-generated reasoning
     neighbor_state_summary: Dict[int, Dict[str, Any]] = field(default_factory=dict)
+    # NEW: Marginal benefit analysis from influence queries
+    marginal_benefit: float = 0.0
+    expected_gain_per_node: Dict[int, float] = field(default_factory=dict)
+    propagation_overlap: Dict[int, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -72,6 +77,9 @@ class CounterProposal:
     retained_nodes: List[int]  # Nodes still claimed
     revised_budget: int
     reasoning: str
+    # NEW: Influence-based justification
+    marginal_gain_conceded: float = 0.0
+    marginal_gain_retained: float = 0.0
 
 
 # ============================================================

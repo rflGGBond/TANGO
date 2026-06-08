@@ -22,7 +22,10 @@ from tango.agents.negotiation_coordinator import NegotiationCoordinator
 from tango.agents.strategic_reviewer import StrategicReviewer
 from tango.communication.topology_graph import TopologyAdaptiveGraph
 from tango.communication.manager import CommunicationManager
-from tango.types import QueryType
+from tango.types import (
+    QueryType, CommunityObservation, CommunityAction,
+    NegotiationBid, NegotiationResult, NegotiationConflict,
+)
 
 # Import HMACE components (to be installed or symlinked)
 try:
@@ -73,6 +76,8 @@ def main():
     parser.add_argument("--disable_coordinator", action="store_true")
     parser.add_argument("--disable_reviewer", action="store_true")
     parser.add_argument("--disable_communication", action="store_true")
+    parser.add_argument("--disable_iterative_revision", action="store_true",
+                        help="Disable iterative bid revision (Gap 3 ablation)")
     
     args = parser.parse_args()
     
@@ -89,6 +94,7 @@ def main():
     print(f"LLM: {args.llm_model} ({args.llm_provider})")
     print(f"Negotiation: {'DISABLED' if args.disable_negotiation else f'Every {args.t_nego} gens'}")
     print(f"Communication: {'DISABLED' if args.disable_communication else 'NR-CIQ'}")
+    print(f"Iterative Revision: {'DISABLED' if args.disable_iterative_revision else f'Up to {args.max_nego_rounds} rounds'}")
     print("=" * 60)
     
     # Init LLM
@@ -182,6 +188,8 @@ def main():
                                 disable_coordinator=args.disable_coordinator,
                                 disable_reviewer=args.disable_reviewer,
                                 disable_communication=args.disable_communication,
+                                disable_iterative_revision=args.disable_iterative_revision,
+                                max_nego_rounds=args.max_nego_rounds,
                             )
                         else:
                             # Standard agent actions
@@ -193,12 +201,11 @@ def main():
                                 if not args.disable_communication:
                                     neighbor_states = comm_manager.get_neighbor_states(
                                         com_id, 
-                                        lambda cid, qt: env.communities[cid].get_observation(
-                                            gen, "exploration", env.global_best_dpadv))
+                                        lambda cid, qt: _community_data_provider(
+                                            cid, qt, env))
                                 else:
                                     neighbor_states = {}
                                 
-                                from tango.types import CommunityObservation
                                 obs_dict["neighbor_states"] = neighbor_states
                                 obs = CommunityObservation(**{k: v for k, v in obs_dict.items() 
                                                               if k in CommunityObservation.__dataclass_fields__})
@@ -222,68 +229,303 @@ def main():
                     print(f"  Negative Activated (COICM): {score:.2f}")
 
 
+# ────────────────────────────────────────────────────────────
+# Negotiation Cycle with Iterative Revision (Gap 3)
+# ────────────────────────────────────────────────────────────
+
 def _run_negotiation_cycle(env, cba_agents, comm_manager,
                            coordinator, reviewer,
                            disable_coordinator=False,
                            disable_reviewer=False,
-                           disable_communication=False):
-    """Execute one full negotiation cycle."""
+                           disable_communication=False,
+                           disable_iterative_revision=False,
+                           max_nego_rounds=3):
+    """
+    Execute one full negotiation cycle with iterative bid revision.
     
+    Algorithm (Gap 3 – Iterative Refinement):
+    ┌─────────────────────────────────────────────────────────┐
+    │ PHASE 1: Initial Query & Bid                            │
+    │   CBA queries neighbors [EVOLUTION_STATE, BOUNDARY_NODES,│
+    │                         BUDGET_PROPOSAL]                │
+    │   → generates initial bid with neighbor data            │
+    ├─────────────────────────────────────────────────────────┤
+    │ PHASE 2: Conflict Detection                             │
+    │   Coordinator detects node_overlap & budget conflicts   │
+    ├─────────────────────────────────────────────────────────┤
+    │ PHASE 3: Iterative Revision (if conflicts & not disabled)│
+    │   FOR round in 1..max_nego_rounds:                      │
+    │     a. CBAs in conflict query INFLUENCE_ESTIMATE        │
+    │     b. CBAs generate revised bids (marginal benefit)    │
+    │     c. Coordinator re-evaluates conflicts               │
+    │     d. If no conflicts remain → BREAK                   │
+    ├─────────────────────────────────────────────────────────┤
+    │ PHASE 4: Final Resolution & Review                      │
+    │   Coordinator produces final allocation                 │
+    │   Reviewer validates (3-level)                          │
+    └─────────────────────────────────────────────────────────┘
+    """
+    
+    # ════════════════════════════════════════════════════════
+    # PHASE 1: Initial Query & Bid
+    # ════════════════════════════════════════════════════════
     bids = []
+    previous_bids: Dict[int, NegotiationBid] = {}  # community_id -> previous bid
     
-    # Phase 1: Each CBA gets neighbor info and generates bid
     for com_id, agent in cba_agents.items():
         com = env.communities[com_id]
         obs_dict = com.get_observation(env.current_gen, "negotiation", 
                                        env.global_best_dpadv)
         
         if not disable_communication:
+            # Phase 1 query: get evolution state + boundary nodes + budget info
             neighbor_states = comm_manager.get_neighbor_states(
                 com_id,
-                lambda cid, qt: env.communities[cid].get_observation(
-                    env.current_gen, "negotiation", env.global_best_dpadv))
+                lambda cid, qt: _community_data_provider(cid, qt, env))
         else:
             neighbor_states = {}
         
         obs_dict["neighbor_states"] = neighbor_states
-        from tango.types import CommunityObservation
         obs = CommunityObservation(**{k: v for k, v in obs_dict.items()
                                       if k in CommunityObservation.__dataclass_fields__})
         
         action = agent.get_action(obs, in_negotiation=True)
         
         if action.negotiation_bid:
+            action.negotiation_bid.round = 0  # Initial bid
             bids.append(action.negotiation_bid)
+            previous_bids[com_id] = action.negotiation_bid
     
     if not bids:
         print("  No bids generated, skipping negotiation")
         return
     
-    # Phase 2: Coordinator resolves conflicts
+    print(f"  Phase 1: {len(bids)} initial bids generated")
+    
+    # ════════════════════════════════════════════════════════
+    # PHASE 2: Conflict Detection
+    # ════════════════════════════════════════════════════════
+    if not disable_coordinator:
+        conflicts = coordinator.detect_conflicts(bids)
+        print(f"  Phase 2: {len(conflicts)} conflict(s) detected")
+    else:
+        conflicts = []
+    
+    # ════════════════════════════════════════════════════════
+    # PHASE 3: Iterative Revision (Gap 3)
+    # ════════════════════════════════════════════════════════
+    if conflicts and not disable_iterative_revision and not disable_communication:
+        print(f"  Phase 3: Starting iterative revision (max {max_nego_rounds} rounds)...")
+        
+        for nego_round in range(1, max_nego_rounds + 1):
+            print(f"    Revision round {nego_round}/{max_nego_rounds}")
+            
+            # 3a. Identify communities involved in conflicts
+            involved_communities = set()
+            for conflict in conflicts:
+                involved_communities.add(conflict.community_a)
+                involved_communities.add(conflict.community_b)
+            # Remove 0 (budget pool)
+            involved_communities.discard(0)
+            
+            # 3b. Query INFLUENCE_ESTIMATE for contested nodes
+            influence_responses: Dict[int, Dict[int, Dict[str, Any]]] = {}
+            # influence_responses[community_id][neighbor_id] = {expected_gain, ...}
+            
+            for com_id in involved_communities:
+                if com_id not in cba_agents:
+                    continue
+                
+                com = env.communities[com_id]
+                obs_dict = com.get_observation(env.current_gen, "negotiation",
+                                               env.global_best_dpadv)
+                
+                # Query neighbors with INFLUENCE_ESTIMATE
+                if not disable_communication:
+                    # Get neighbors from topology
+                    neighbors = comm_manager.get_neighbors(comm_manager.comm_graph, com_id) \
+                        if comm_manager.comm_graph else []
+                    
+                    influence_data = {}
+                    for neighbor_id in neighbors:
+                        try:
+                            data = _community_data_provider(neighbor_id, QueryType.INFLUENCE_ESTIMATE, env)
+                            if data:
+                                influence_data[neighbor_id] = data
+                        except Exception as e:
+                            print(f"      Influence query {com_id}→{neighbor_id} failed: {e}")
+                    
+                    influence_responses[com_id] = influence_data
+                    
+                    # Also get standard neighbor states for context
+                    neighbor_states = comm_manager.get_neighbor_states(
+                        com_id,
+                        lambda cid, qt: _community_data_provider(cid, qt, env))
+                else:
+                    neighbor_states = {}
+                    influence_responses[com_id] = {}
+                
+                obs_dict["neighbor_states"] = neighbor_states
+                obs = CommunityObservation(**{k: v for k, v in obs_dict.items()
+                                              if k in CommunityObservation.__dataclass_fields__})
+                
+                # 3c. Generate revised bid
+                prev_bid = previous_bids.get(com_id)
+                if prev_bid is None:
+                    continue
+                
+                # Filter conflicts relevant to this agent
+                my_conflicts = [
+                    c for c in conflicts
+                    if com_id in (c.community_a, c.community_b)
+                ]
+                
+                revised_action = agent._generate_revised_bid(
+                    obs, my_conflicts, prev_bid,
+                    influence_responses.get(com_id, {}))
+                
+                if revised_action.negotiation_bid:
+                    revised_action.negotiation_bid.round = nego_round
+                    # Update bids list: replace old bid for this community
+                    bids = [b for b in bids if b.community_id != com_id]
+                    bids.append(revised_action.negotiation_bid)
+                    previous_bids[com_id] = revised_action.negotiation_bid
+                    
+                    if revised_action.counter_proposal:
+                        pass  # Counter-proposals are tracked in the bid
+            
+            # 3d. Re-detect conflicts with revised bids
+            if not disable_coordinator:
+                conflicts = coordinator.detect_conflicts(bids)
+                print(f"      Conflicts remaining: {len(conflicts)}")
+                
+                if not conflicts:
+                    print(f"    All conflicts resolved in round {nego_round}!")
+                    break
+            else:
+                conflicts = []
+                break
+        
+        if conflicts:
+            print(f"    {len(conflicts)} conflict(s) remain after {max_nego_rounds} rounds")
+    
+    # ════════════════════════════════════════════════════════
+    # PHASE 4: Final Resolution & Review
+    # ════════════════════════════════════════════════════════
+    
+    # Coordinator produces final resolution
     if not disable_coordinator:
         result = coordinator.coordinate(bids, env.communities, env.global_best_dpadv)
     else:
         # No coordinator: just use bids directly
-        from tango.types import NegotiationResult
         result = NegotiationResult(
             round=0, consensus_reached=True,
             boundary_allocations={b.community_id: b.boundary_node_proposals for b in bids},
             budget_allocations={b.community_id: b.budget_request for b in bids},
         )
     
-    # Phase 3: Reviewer validates
+    # Reviewer validates
     if not disable_reviewer:
         review_result = reviewer.review(
             result, env.communities, env.G, env.sn_nodes,
             env.global_best_dpadv, DPADVEvaluator)
         
         if review_result.passed:
-            print(f"  Negotiation PASSED review ({review_result.stage})")
+            print(f"  Phase 4: Negotiation PASSED review ({review_result.stage})")
             _apply_negotiation_result(env, result)
         else:
-            print(f"  Negotiation REJECTED: {review_result.rejection_reason}")
+            print(f"  Phase 4: Negotiation REJECTED: {review_result.rejection_reason}")
     else:
         _apply_negotiation_result(env, result)
+
+
+def _community_data_provider(community_id: int, query_type, env) -> Dict[str, Any]:
+    """
+    Provide community data in response to an NR-CIQ query.
+    
+    Maps QueryType to the appropriate community observation fields.
+    This is the callback used by CommunicationManager.route_query().
+    """
+    try:
+        com = env.communities[community_id]
+        state = com.state
+        obs = com.get_observation(env.current_gen, "negotiation", env.global_best_dpadv)
+    except Exception:
+        return {}
+    
+    from tango.utils.types import QueryType as QT
+    
+    if query_type == QT.EVOLUTION_STATE or str(query_type) == "evolution_state":
+        return {
+            "current_dpadv": state.current_dpadv,
+            "dpadv_history": getattr(state, 'dpadv_history', [])[-10:],
+            "diversity_score": getattr(state, 'diversity_score', 0.0),
+            "stagnation_count": getattr(state, 'stagnation_count', 0),
+            "danger_score": getattr(state, 'danger_score', 0.0),
+            "parameters": getattr(state, 'parameters', {}),
+            "improvement_rate": getattr(state, 'improvement_rate', 0.0),
+            "gamma": getattr(state, 'gamma', 0.0),
+            "best_dpadv": state.current_dpadv,
+            "budget": state.budget,
+            "boundary_node_count": len(getattr(state, 'boundary_nodes', [])),
+        }
+    
+    elif query_type == QT.BOUNDARY_NODES or str(query_type) == "boundary_nodes":
+        boundary_nodes = getattr(state, 'boundary_nodes', [])
+        return {
+            "boundary_nodes": boundary_nodes,
+            "boundary_node_count": len(boundary_nodes),
+            "neighbor_ids": getattr(state, 'neighbor_community_ids', []),
+            "boundary_scores": getattr(state, 'boundary_scores', {}),
+            "covered_frontier": getattr(state, 'covered_frontier', []),
+            "expected_gain": getattr(state, 'expected_gain', 0.0),
+            "current_dpadv": state.current_dpadv,
+            "danger_score": getattr(state, 'danger_score', 0.0),
+            "budget": state.budget,
+        }
+    
+    elif query_type == QT.TOP_K_CANDIDATES or str(query_type) == "top_k_candidates":
+        return {
+            "top_k_score_nodes": obs.get("top_k_score_nodes", []) if isinstance(obs, dict) else [],
+            "current_seed_set": getattr(state, 'current_seed_set', []),
+            "solution_history": getattr(state, 'solution_history', [])[-5:],
+        }
+    
+    elif query_type == QT.BUDGET_PROPOSAL or str(query_type) == "budget_proposal":
+        return {
+            "budget": state.budget,
+            "current_dpadv": state.current_dpadv,
+            "boundary_risk": getattr(state, 'boundary_risk', 0.0),
+            "improvement_rate": getattr(state, 'improvement_rate', 0.0),
+            "marginal_benefit": getattr(state, 'marginal_benefit', 0.0),
+            "danger_score": getattr(state, 'danger_score', 0.0),
+        }
+    
+    elif query_type == QT.INFLUENCE_ESTIMATE or str(query_type) == "influence_estimate":
+        # INFLUENCE_ESTIMATE: return data needed for marginal benefit comparison
+        return {
+            "expected_gain": getattr(state, 'expected_gain', 0.0),
+            "covered_frontier": getattr(state, 'covered_frontier', []),
+            "marginal_benefit": getattr(state, 'marginal_benefit', 0.0),
+            "propagation_overlap": getattr(state, 'propagation_overlap', 0.0),
+            "current_dpadv": state.current_dpadv,
+            "danger_score": getattr(state, 'danger_score', 0.0),
+            "budget": state.budget,
+        }
+    
+    # Fallback: return basic state info
+    return {
+        "current_dpadv": state.current_dpadv,
+        "danger_score": getattr(state, 'danger_score', 0.0),
+        "budget": state.budget,
+    }
+
+
+def _get_neighbors(comm_graph, community_id: int) -> List[int]:
+    """Get communication neighbors for a community."""
+    if comm_graph is None:
+        return []
+    return list(comm_graph.neighbors(community_id))
 
 
 def _apply_negotiation_result(env, result):

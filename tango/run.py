@@ -27,14 +27,11 @@ from tango.types import (
     NegotiationBid, NegotiationResult, NegotiationConflict,
 )
 
-# Import HMACE components (to be installed or symlinked)
-try:
-    from HMACE.environment.env import PCMCCEnvironment
-    from HMACE.utils.llm_client import LLMClient
-    from HMACE.core.evaluator import DPADVEvaluator
-    from HMACE.utils.select_SN import select_SN
-except ImportError:
-    print("Warning: HMACE not found in path. Please install or symlink HMACE.")
+# TANGO self-contained imports (from HMACE-derived core/environment)
+from tango.environment.env import PCMCCEnvironment
+from tango.utils.llm_client import LLMClient
+from tango.core.evaluator import DPADVEvaluator
+from tango.utils.select_SN import select_SN
 
 
 DIRECTED_GRAPHS = {"email-Eu-core", "p2p-Gnutella31", "soc-Epinions1",
@@ -126,7 +123,7 @@ def main():
             for r in range(args.repeats):
                 print(f"  Repeat {r+1}/{args.repeats}")
                 
-                # Init HMACE environment
+                # Init PCMCC environment
                 env = PCMCCEnvironment(
                     graph_path, sn_nodes, k, args.num_communities,
                     is_directed=is_directed,

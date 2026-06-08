@@ -1,4 +1,4 @@
-"""Community Bidding Agent (CBA): P2P negotiating agent for TANGO-CIQ."""
+"""Community Bidding Agent (CBA): P2P negotiating agent for TANGO."""
 
 import json
 import dataclasses
@@ -93,7 +93,7 @@ class CommunityBiddingAgent(BaseAgent):
         neighbor_summary = self._summarize_neighbors(neighbor_info)
         
         system_prompt = f"""
-        You are a Community Bidding Agent in the TANGO-CIQ multi-agent framework.
+        You are a Community Bidding Agent in the TANGO multi-agent framework.
         
         YOUR GOAL: Maximize GLOBAL blocking effectiveness, not just your own community's score.
         

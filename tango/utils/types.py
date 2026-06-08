@@ -1,4 +1,4 @@
-"""Extended types for TANGO-CIQ negotiation framework."""
+"""Extended types for TANGO negotiation framework."""
 
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple
@@ -137,7 +137,7 @@ class CommunityObservation:
     stagnation_count: int = 0
     danger_score: float = 0.0
     solution_history: List[Dict[str, Any]] = field(default_factory=list)
-    # Extended for TANGO-CIQ
+    # Extended for TANGO
     neighbor_states: Dict[int, Dict[str, Any]] = field(default_factory=dict)
 
 
@@ -150,7 +150,7 @@ class CommunityAction:
     # Mode B: Candidate Generation
     candidate_seed_set: Optional[List[int]] = None
     
-    # Mode C: Negotiation Bid (NEW for TANGO-CIQ)
+    # Mode C: Negotiation Bid (NEW for TANGO)
     negotiation_bid: Optional[NegotiationBid] = None
     counter_proposal: Optional[CounterProposal] = None
 

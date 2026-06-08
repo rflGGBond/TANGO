@@ -1,10 +1,10 @@
-"""TANGO-CIQ Main Entry Point.
+"""TANGO Main Entry Point.
 
-TANGO-CIQ: Topology-Adaptive Neighbor-Governed Orchestration with Coordinated Inquiry.
+TANGO: Topology-Adaptive Neighbor-Governed Orchestration.
 Transforms LLM agents from Advisors to Decision-Makers in cooperative coevolution.
 
 Usage:
-    python tango_ciq/run.py --graphs congress-Twitter --total_budget 20 110 200
+    python tango/run.py --graphs congress-Twitter --total_budget 20 110 200
 """
 
 import os
@@ -17,12 +17,12 @@ import numpy as np
 # Add parent directory for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tango_ciq.agents.community_bidding_agent import CommunityBiddingAgent
-from tango_ciq.agents.negotiation_coordinator import NegotiationCoordinator
-from tango_ciq.agents.strategic_reviewer import StrategicReviewer
-from tango_ciq.communication.topology_graph import TopologyAdaptiveGraph
-from tango_ciq.communication.manager import CommunicationManager
-from tango_ciq.utils.types import QueryType
+from tango.agents.community_bidding_agent import CommunityBiddingAgent
+from tango.agents.negotiation_coordinator import NegotiationCoordinator
+from tango.agents.strategic_reviewer import StrategicReviewer
+from tango.communication.topology_graph import TopologyAdaptiveGraph
+from tango.communication.manager import CommunicationManager
+from tango.types import QueryType
 
 # Import HMACE components (to be installed or symlinked)
 try:
@@ -40,7 +40,7 @@ UNDIRECTED_GRAPHS = {"BA3000", "ER3000", "WS3000"}
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run TANGO-CIQ")
+    parser = argparse.ArgumentParser(description="Run TANGO")
     
     # Experiment args
     parser.add_argument("--graphs", type=str, nargs='+', default=["congress-Twitter"])
@@ -63,7 +63,7 @@ def main():
     parser.add_argument("--api_key", type=str, default=None)
     parser.add_argument("--base_url", type=str, default=None)
     
-    # TANGO-CIQ specific args
+    # TANGO specific args
     parser.add_argument("--max_nego_rounds", type=int, default=3)
     parser.add_argument("--topology_threshold", type=float, default=0.1)
     parser.add_argument("--max_queries", type=int, default=5)
@@ -82,7 +82,7 @@ def main():
     
     # Print config
     print("=" * 60)
-    print("TANGO-CIQ: Topology-Adaptive Neighbor-Governed Orchestration")
+    print("TANGO: Topology-Adaptive Neighbor-Governed Orchestration")
     print("=" * 60)
     print(f"Graphs: {args.graphs}")
     print(f"Budgets: {args.total_budget}")
@@ -127,7 +127,7 @@ def main():
                     tau_1=args.tau_1, tau_2=args.tau_2,
                 )
                 
-                # Init TANGO-CIQ components
+                # Init TANGO components
                 topology = TopologyAdaptiveGraph(
                     connection_threshold=args.topology_threshold)
                 comm_manager = CommunicationManager(topology)
@@ -198,7 +198,7 @@ def main():
                                 else:
                                     neighbor_states = {}
                                 
-                                from tango_ciq.utils.types import CommunityObservation
+                                from tango.types import CommunityObservation
                                 obs_dict["neighbor_states"] = neighbor_states
                                 obs = CommunityObservation(**{k: v for k, v in obs_dict.items() 
                                                               if k in CommunityObservation.__dataclass_fields__})
@@ -246,7 +246,7 @@ def _run_negotiation_cycle(env, cba_agents, comm_manager,
             neighbor_states = {}
         
         obs_dict["neighbor_states"] = neighbor_states
-        from tango_ciq.utils.types import CommunityObservation
+        from tango.types import CommunityObservation
         obs = CommunityObservation(**{k: v for k, v in obs_dict.items()
                                       if k in CommunityObservation.__dataclass_fields__})
         
@@ -264,7 +264,7 @@ def _run_negotiation_cycle(env, cba_agents, comm_manager,
         result = coordinator.coordinate(bids, env.communities, env.global_best_dpadv)
     else:
         # No coordinator: just use bids directly
-        from tango_ciq.utils.types import NegotiationResult
+        from tango.types import NegotiationResult
         result = NegotiationResult(
             round=0, consensus_reached=True,
             boundary_allocations={b.community_id: b.boundary_node_proposals for b in bids},

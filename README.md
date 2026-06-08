@@ -1,12 +1,12 @@
-# TANGO-CIQ: Topology-Adaptive Neighbor-Governed Orchestration with Coordinated Inquiry
+# TANGO: Topology-Adaptive Neighbor-Governed Orchestration 
 
 **From Advisor to Decision-Maker: A Negotiation-Based Multi-Agent Framework for Cooperative Coevolution**
 
-TANGO-CIQ transforms LLM agents from passive advisors into active decision-makers in evolutionary algorithms. Builds upon HMACE (Li et al., 2026) and targets the Influence Blocking Maximization (IBM) problem.
+TANGO transforms LLM agents from passive advisors into active decision-makers in evolutionary algorithms. Builds upon HMACE (Li et al., 2026) and targets the Influence Blocking Maximization (IBM) problem.
 
 ## Core Innovation
 
-Existing LLM-EA methods treat agents as external consultants — they observe, suggest, and wait for the EA engine to accept or reject. TANGO-CIQ upgrades agents to **negotiating decision-makers** that:
+Existing LLM-EA methods treat agents as external consultants — they observe, suggest, and wait for the EA engine to accept or reject. TANGO upgrades agents to **negotiating decision-makers** that:
 
 1. **Topology-Adaptive Communication Graph**: Dynamically build agent communication topology based on cross-community propagation strength
 2. **NR-CIQ (Neighbor-Restricted Coordinated Inquiry)**: Structured JSON-based queries between neighbor agents only
@@ -16,21 +16,21 @@ Existing LLM-EA methods treat agents as external consultants — they observe, s
 ## Installation
 
 ```bash
-git clone https://github.com/rflGGBond/TANGO-CIQ.git
-cd TANGO-CIQ
+git clone https://github.com/rflGGBond/TANGO.git
+cd TANGO
 pip install -r requirements.txt
 ```
 
 ## Quick Start
 
 ```bash
-python tango_ciq/run.py --graphs congress-Twitter --total_budget 20 110 200 --llm_provider local --llm_model Qwen2.5-7B-Instruct
+python tango/run.py --graphs congress-Twitter --total_budget 20 110 200 --llm_provider local --llm_model Qwen2.5-7B-Instruct
 ```
 
 ## Repository Structure
 
 ```
-tango_ciq/
+tango/
 ├── run.py                 # Main entry point
 ├── agents/                # Agent implementations
 │   ├── community_bidding_agent.py  # P2P negotiating agents
@@ -48,8 +48,8 @@ tango_ciq/
 ## Citation
 
 ```bibtex
-@article{tango-ciq,
-  title={TANGO-CIQ: From Advisor to Decision-Maker — A Negotiation-Based Multi-Agent Framework for Cooperative Coevolution},
+@article{tango,
+  title={TANGO: From Advisor to Decision-Maker — A Negotiation-Based Multi-Agent Framework for Cooperative Coevolution},
   author={Li, Fan-Rong and ...},
   year={2026}
 }

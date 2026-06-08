@@ -139,7 +139,7 @@ class StrategicReviewer(BaseAgent):
             })
         
         system_prompt = f"""
-        You are the Strategic Reviewer in TANGO-CIQ.
+        You are the Strategic Reviewer in TANGO.
         
         GLOBAL BEST DPADV: {global_best_dpadv:.4f}
         

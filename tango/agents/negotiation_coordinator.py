@@ -127,7 +127,7 @@ class NegotiationCoordinator(BaseAgent):
             })
         
         system_prompt = f"""
-        You are the Negotiation Coordinator in TANGO-CIQ.
+        You are the Negotiation Coordinator in TANGO.
         
         GLOBAL STATE:
         - Total Budget: {self.total_budget}

@@ -82,9 +82,15 @@ class NRCIQProtocol:
     
     @staticmethod
     def extract_neighbor_info(responses: List[NRCIQResponse]) -> Dict[int, Dict[str, Any]]:
-        """Aggregate responses from multiple neighbors into a single dict."""
-        neighbor_states = {}
+        """Aggregate responses from multiple neighbors into a single dict.
+        
+        Merges data from multiple query types for the same neighbor
+        (e.g., EVOLUTION_STATE + BOUNDARY_NODES) instead of overwriting.
+        """
+        from collections import defaultdict
+        neighbor_states: Dict[int, Dict[str, Any]] = defaultdict(dict)
         for resp in responses:
             if resp.status == "ok":
-                neighbor_states[resp.sender_id] = resp.data
-        return neighbor_states
+                # Merge: later keys override earlier ones (same key = latest wins)
+                neighbor_states[resp.sender_id].update(resp.data)
+        return dict(neighbor_states)

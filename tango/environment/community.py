@@ -40,6 +40,14 @@ class CommunityState:
     neighbor_community_ids: List[int] = field(default_factory=list)
     boundary_nodes: List[int] = field(default_factory=list)
     
+    # TANGO Extension: Community health & influence metrics
+    danger_score: float = 0.0
+    boundary_risk: float = 0.0
+    marginal_benefit: float = 0.0         # ΔDPADV / Δbudget
+    expected_gain: float = 0.0            # estimated DPADV reduction from claiming boundary
+    covered_frontier: List[int] = field(default_factory=list)  # boundary nodes already covered
+    propagation_overlap: float = 0.0      # Jaccard of influence reachable sets with neighbors
+    
     # Status
     stage: str = "exploration" # exploration, exploitation, stagnation
     stagnation_count: int = 0 # Generations without improvement
@@ -231,5 +239,11 @@ class Community:
                 "alpha": self.state.alpha
             },
             "stagnation_count": self.state.stagnation_count,
+            "danger_score": self.state.danger_score,
+            "boundary_risk": self.state.boundary_risk,
+            "marginal_benefit": self.state.marginal_benefit,
+            "expected_gain": self.state.expected_gain,
+            "covered_frontier": self.state.covered_frontier,
+            "propagation_overlap": self.state.propagation_overlap,
             "global_dpadv": global_dpadv
         }

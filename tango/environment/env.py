@@ -507,6 +507,7 @@ class PCMCCEnvironment:
         
         for com_id, com in self.communities.items():
             danger = self._calculate_community_danger(com, delta_ref)
+            com.state.danger_score = danger  # TANGO: persist danger for agent queries
             if danger >= self.tau_2:
                 # MARK DANGER STATE
                 self.was_in_critical_danger = True
@@ -800,6 +801,7 @@ class PCMCCEnvironment:
             
             # --- Danger Score Calculation ---
             danger_i = self._calculate_community_danger(com, delta_ref)
+            com.state.danger_score = danger_i  # TANGO: persist on state
             
             # Recalculate Gamma for observation
             gamma_i = gamma_merger.calculate_gamma(self.Gs, com.state.nodes)
@@ -809,13 +811,16 @@ class PCMCCEnvironment:
             if danger_i >= self.tau_2 or self.was_in_critical_danger:
                 emergency_global_call = True
             
+            b_risk = len(com.state.boundary_nodes) / max(1, len(com.state.nodes))
+            com.state.boundary_risk = b_risk  # TANGO: persist on state
+            
             summaries.append(CommunitySummary(
                 community_id=com_id,
                 budget=com.state.budget,
                 best_dpadv=com.state.current_dpadv,
                 improvement_rate=imp_rate, 
                 diversity=com.state.diversity_score,
-                boundary_risk=len(com.state.boundary_nodes) / max(1, len(com.state.nodes)),
+                boundary_risk=b_risk,
                 closeness_info=closeness,
                 danger_score=danger_i,
                 gamma=gamma_i

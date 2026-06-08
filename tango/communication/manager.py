@@ -141,6 +141,13 @@ class CommunicationManager:
             community_data_provider)
         return self.protocol.extract_neighbor_info(responses)
     
+    def get_neighbors(self, community_id: int) -> List[int]:
+        """Get communication neighbors for a community (convenience wrapper)."""
+        if self.comm_graph is None:
+            return []
+        return list(self.comm_graph.neighbors(community_id))
+    
     def clear_cache(self):
+
         """Clear the response cache."""
         self._cache.clear()

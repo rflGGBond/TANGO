@@ -340,8 +340,7 @@ def _run_negotiation_cycle(env, cba_agents, comm_manager,
                 # Query neighbors with INFLUENCE_ESTIMATE
                 if not disable_communication:
                     # Get neighbors from topology
-                    neighbors = comm_manager.get_neighbors(comm_manager.comm_graph, com_id) \
-                        if comm_manager.comm_graph else []
+                    neighbors = comm_manager.get_neighbors(com_id)
                     
                     influence_data = {}
                     for neighbor_id in neighbors:
@@ -516,13 +515,6 @@ def _community_data_provider(community_id: int, query_type, env) -> Dict[str, An
         "danger_score": getattr(state, 'danger_score', 0.0),
         "budget": state.budget,
     }
-
-
-def _get_neighbors(comm_graph, community_id: int) -> List[int]:
-    """Get communication neighbors for a community."""
-    if comm_graph is None:
-        return []
-    return list(comm_graph.neighbors(community_id))
 
 
 def _apply_negotiation_result(env, result):
